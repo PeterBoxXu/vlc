@@ -42,12 +42,21 @@ class vlc():
     return message
   
   def print_received_msg(self):
+    while True:
+      data = self.receive()
+      if data.startswith("m[R"):  # if message read from port is a received message, instead of the response of a sent message (m[P] messages)
+        msg = data.split(",")[-1][:-1]  # extract the message from the data
+        if msg.startswith("A"):  # if message is an ACK signal, ignore it
+          continue
+        print("%s Received from %s: %s" %(self.addr, self.other_addr, msg))
+        return
+  
+  def wait_for_ack(self):
     data = self.receive()
     if data.startswith("m[R"):  # if message read from port is a received message, instead of the response of a sent message (m[P] messages)
       msg = data.split(",")[-1][:-1]  # extract the message from the data
       if msg.startswith("A"):  # if message is an ACK signal, ignore it
         return
-      print("%s Received from %s: %s" %(self.addr, self.other_addr, msg))
       return
     return
   
@@ -61,16 +70,18 @@ if __name__ == "__main__":
   v2 = vlc("/dev/tty.usbmodem142201", "CD", "AB")
 
   while True:
-    v1_msg = "Hello from AB"
-    v2_msg = "Hello from CD"
       
     try:  
+      v1_msg = input("AB -> CD >> ")
       v1.send(v1_msg)
       v2.print_received_msg()
+      v1.wait_for_ack()
+      
+      v2_msg = input("CD -> AB >> ")
       v2.send(v2_msg)
       v1.print_received_msg()
+      v2.wait_for_ack()
 
-      time.sleep(0.1)
     except KeyboardInterrupt:
       break
     except serial.SerialException:

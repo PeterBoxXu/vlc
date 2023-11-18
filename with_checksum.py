@@ -21,6 +21,7 @@ class vlc():
     self.other_addr = other_addr
     self.s = serial.Serial(port,115200,timeout=1)
     self.last_msg = ""
+    self.own_messages = []  # queue of messages sent by this device
     self.setup()
 
   def setup(self):
@@ -62,24 +63,27 @@ class vlc():
         break
     return message
   
-  
-  def do_receive(self):
+
+  def run(self, message):
     # receives a data message. If the checksum is correct, do nothing.
     # If the checksum is incorrect, send a NACK signal to the sender.
     # Note all of this is explicitly performed at application level, not at the VLC level.
     payload = self.receive()
+    if not payload:
+      self.send(message)
+      return 
+    
     if not payload.startswith("m[R"):  # if message read from port is only a response of a sent message (m[P] messages), ignore it
       return
     
+    data = payload.split(",")[-1][:-1]    
+    if data == "A": # if data read from port is an ACK signal, ignore it
+      return
+    
     # if message read from port is a received message...
-    data = payload.split(",")[-1][:-1]
     if data.startswith("NACK"):  # if data read from port is a NACK signal, resend last message
       print("%s Received a NACK signal, resending last message" %self.addr)
       self.send(self.last_msg)
-      return
-    
-    if data == "A": # if data read from port is an ACK signal, ignore it
-      print("%s Received an ACK signal, doing nothing" %self.addr)
       return
     
     # then, message read from port must be a genuine message...
@@ -87,17 +91,24 @@ class vlc():
     received_checksum = data.split("|")[-1]
     calculated_checksum = self.checksum(msg)
     if received_checksum != calculated_checksum:  # if checksum is incorrect, send a NACK signal to the sender
-      print("%s Received a data message with incorrect checksum" %self.addr)
-      print("Received checksum: %s" %received_checksum)
-      print("Calculated checksum: %s" %calculated_checksum)
+      # print("%s Received a data message with incorrect checksum" %self.addr)
+      # print("Received checksum: %s" %received_checksum)
+      # print("Calculated checksum: %s" %calculated_checksum)
       print("Sending NACK signal to %s" %self.other_addr)
+      
+      # enqueue the message we were supposed to send instead of NACK, so that it can be sent later
+      self.own_messages.append(message)
       self.s.write(str.encode("m[NACK\0," + self.other_addr + "]\n"))
       return
     
     # if checksum is correct, print the message
     print("%s Received from %s: %s" %(self.addr, self.other_addr, data))
-    return
 
+    if self.own_messages:
+      self.send(self.own_messages.pop(0))  # send the first message in the queue
+    else:
+      self.send(message)
+    return
 
   def close(self):
     self.s.close()
@@ -112,13 +123,11 @@ if __name__ == "__main__":
     v1_msg = "Hello from AB"
     v2_msg = "Hello from CD"
       
-    try:  
-      v1.send(v1_msg)
-      v2.do_receive()
-      v2.send(v2_msg)
-      v1.do_receive()
+    try:
+      v1.run(v1_msg)
+      v2.run(v2_msg)
 
-      time.sleep(0.1)  # wait for 0.1 second to avoid sending messages too fast
+      # time.sleep(0.1)  # wait for 0.1 second to avoid sending messages too fast
     except KeyboardInterrupt:
       break
     except serial.SerialException:
