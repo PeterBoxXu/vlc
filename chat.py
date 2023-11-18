@@ -42,6 +42,10 @@ class vlc():
     return message
   
   def print_received_msg(self):
+    # during transmission, a lot of messages will appear on the receiving end, including responses of send commands previously initiated by the receiver itself (m[P] messages)
+    # therefore, we need a while loop to consume all the messages until we get the one we want
+    # Note: this while loop will block the program if we replace input() with a fixed message
+    # and the cause of this issue is not yet determined
     while True:
       data = self.receive()
       if data.startswith("m[R"):  # if message read from port is a received message, instead of the response of a sent message (m[P] messages)
@@ -50,15 +54,6 @@ class vlc():
           continue
         print("%s Received from %s: %s" %(self.addr, self.other_addr, msg))
         return
-  
-  def wait_for_ack(self):
-    data = self.receive()
-    if data.startswith("m[R"):  # if message read from port is a received message, instead of the response of a sent message (m[P] messages)
-      msg = data.split(",")[-1][:-1]  # extract the message from the data
-      if msg.startswith("A"):  # if message is an ACK signal, ignore it
-        return
-      return
-    return
   
   def close(self):
     self.s.close()
@@ -75,12 +70,10 @@ if __name__ == "__main__":
       v1_msg = input("AB -> CD >> ")
       v1.send(v1_msg)
       v2.print_received_msg()
-      v1.wait_for_ack()
       
       v2_msg = input("CD -> AB >> ")
       v2.send(v2_msg)
       v1.print_received_msg()
-      v2.wait_for_ack()
 
     except KeyboardInterrupt:
       break
